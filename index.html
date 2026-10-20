@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hangul Pronunciation Matrix</title>
+    
+    <!-- Tailwind CSS for rapid styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel for JSX compilation in browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body { font-family: 'Inter', 'Segoe UI', sans-serif; background-color: #f8fafc; }
+        .hangul-font { font-family: 'Pretendard', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; }
+        /* Smooth scrolling for the table container */
+        .table-scroll { scroll-behavior: smooth; }
+        /* Sticky headers to keep context while scrolling */
+        th { position: sticky; top: 0; z-index: 10; background-color: #f1f5f9; }
+        th:first-child { left: 0; z-index: 20; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback } = React;
+
+        // Basic Consonants (Rows) matching PDF Page 1
+        const CONSONANTS = [
+            { char: 'ㄱ', rom: 'g/k', index: 0 },
+            { char: 'ㄴ', rom: 'n', index: 2 },
+            { char: 'ㄷ', rom: 'd/t', index: 3 },
+            { char: 'ㄹ', rom: 'r/l', index: 5 },
+            { char: 'ㅁ', rom: 'm', index: 6 },
+            { char: 'ㅂ', rom: 'b/p', index: 7 },
+            { char: 'ㅅ', rom: 's', index: 9 },
+            { char: 'ㅇ', rom: 'ng', index: 11 },
+            { char: 'ㅈ', rom: 'j', index: 12 },
+            { char: 'ㅊ', rom: 'ch', index: 14 },
+            { char: 'ㅋ', rom: 'k', index: 15 },
+            { char: 'ㅌ', rom: 't', index: 16 },
+            { char: 'ㅍ', rom: 'p', index: 17 },
+            { char: 'ㅎ', rom: 'h', index: 18 }
+        ];
+
+        // Basic Vowels (Columns) matching PDF Page 1
+        const VOWELS = [
+            { char: 'ㅏ', rom: 'a', index: 0 },
+            { char: 'ㅑ', rom: 'ya', index: 2 },
+            { char: 'ㅓ', rom: 'eo', index: 4 },
+            { char: 'ㅕ', rom: 'yeo', index: 6 },
+            { char: 'ㅗ', rom: 'o', index: 8 },
+            { char: 'ㅛ', rom: 'yo', index: 12 },
+            { char: 'ㅜ', rom: 'u', index: 13 },
+            { char: 'ㅠ', rom: 'yu', index: 17 },
+            { char: 'ㅡ', rom: 'eu', index: 18 },
+            { char: 'ㅣ', rom: 'i', index: 20 }
+        ];
+
+        const App = () => {
+            const [activeSyllable, setActiveSyllable] = useState(null);
+            const [voices, setVoices] = useState([]);
+            const [isSpeaking, setIsSpeaking] = useState(false);
+
+            // Calculate exact Hangul Unicode character based on consonant and vowel index
+            const getSyllable = useCallback((cIndex, vIndex) => {
+                const baseCode = 44032; // '가'
+                return String.fromCharCode(baseCode + (cIndex * 21 * 28) + (vIndex * 28));
+            }, []);
+
+            // Load Korean voices for the Web Speech API
+            useEffect(() => {
+                const loadVoices = () => {
+                    const availableVoices = window.speechSynthesis.getVoices();
+                    let koreanVoices = availableVoices.filter(voice => voice.lang.includes('ko'));
+                    
+                    // 우선순위: 1. Google(크롬/안드로이드), 2. Yuna(애플 iOS/Mac 고음질), 3. Microsoft
+                    koreanVoices.sort((a, b) => {
+                        const nameA = a.name.toLowerCase();
+                        const nameB = b.name.toLowerCase();
+                        if(nameA.includes('google') && !nameB.includes('google')) return -1;
+                        if(!nameA.includes('google') && nameB.includes('google')) return 1;
+                        if(nameA.includes('yuna') && !nameB.includes('yuna')) return -1; // 애플 기기 고음질
+                        if(!nameA.includes('yuna') && nameB.includes('yuna')) return 1;
+                        return 0;
+                    });
+                    
+                    setVoices(koreanVoices);
+                };
+
+                loadVoices();
+                if (speechSynthesis.onvoiceschanged !== undefined) {
+                    speechSynthesis.onvoiceschanged = loadVoices;
+                }
+            }, []);
+
+            // Function to speak the selected syllable
+            const speak = useCallback((text, consonantRef, vowelRef) => {
+                setActiveSyllable({ text, consonantRef, vowelRef });
+                
+                if ('speechSynthesis' in window) {
+                    window.speechSynthesis.cancel(); // Stop current speech
+                    
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.lang = 'ko-KR';
+                    
+                    // 모바일 기기 엔진에서 속도를 너무 낮추면 기계음처럼 뭉개지므로 0.95로 조정하여 왜곡 방지
+                    utterance.rate = 0.95; 
+                    utterance.pitch = 1.0;
+                    
+                    if (voices.length > 0) {
+                        utterance.voice = voices[0];
+                    }
+                    
+                    utterance.onstart = () => setIsSpeaking(true);
+                    utterance.onend = () => setIsSpeaking(false);
+                    utterance.onerror = () => setIsSpeaking(false);
+                    
+                    window.speechSynthesis.speak(utterance);
+                }
+            }, [voices]);
+
+            return (
+                <div className="h-screen w-full flex flex-col bg-slate-50 p-1 sm:p-2 overflow-hidden">
+                    <header className="flex-none max-w-6xl mx-auto w-full mb-1 flex flex-row items-center justify-between px-1">
+                        <div className="text-left">
+                            <h1 className="text-lg sm:text-2xl font-bold text-slate-800 tracking-tight">Hangul Pronunciation</h1>
+                            <p className="text-[9px] sm:text-[11px] text-slate-500 mt-0.5">Click any syllable to hear it.</p>
+                        </div>
+                        
+                        {/* Display currently selected syllable - Further reduced to save vertical space */}
+                        <div className="flex items-center justify-center bg-white rounded-lg shadow-sm border border-slate-200 p-1 w-16 h-10 sm:w-20 sm:h-12 shrink-0">
+                            {activeSyllable ? (
+                                <div className="text-center flex flex-col items-center justify-center">
+                                    <span className={`text-xl sm:text-2xl font-bold hangul-font text-blue-600 transition-transform ${isSpeaking ? 'scale-110' : 'scale-100'}`}>
+                                        {activeSyllable.text}
+                                    </span>
+                                    <span className="text-slate-400 mt-0 text-[8px] sm:text-[9px] font-medium leading-none">
+                                        {activeSyllable.consonantRef} + {activeSyllable.vowelRef}
+                                    </span>
+                                </div>
+                            ) : (
+                                <span className="text-slate-400 font-medium text-[8px] sm:text-[9px] text-center leading-tight">Select<br/>Syllable</span>
+                            )}
+                        </div>
+                    </header>
+
+                    <div className="flex-1 max-w-6xl mx-auto w-full bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden flex flex-col min-h-0">
+                        <div className="flex-1 overflow-hidden">
+                            <table className="w-full h-full text-center border-collapse table-fixed">
+                                <thead>
+                                    {/* 모바일 브라우저 렌더링 버그 방지를 위해 인라인 style로 정확한 비율 계산 (calc) 적용 */}
+                                    <tr style={{ height: 'calc(100% / 15)' }}>
+                                        <th className="border-b border-r border-slate-200 bg-slate-100 w-10 sm:w-16 overflow-hidden">
+                                            <span className="text-[7px] sm:text-[10px] text-slate-400 block leading-none whitespace-nowrap">자음\모음</span>
+                                        </th>
+                                        {VOWELS.map((v) => (
+                                            <th key={v.char} className="border-b border-slate-200 bg-slate-100 px-0 overflow-hidden">
+                                                <div className="flex flex-row items-baseline justify-center gap-0.5 sm:gap-1 whitespace-nowrap">
+                                                    <span className="text-[10px] sm:text-lg font-bold text-red-600 hangul-font leading-none">{v.char}</span>
+                                                    <span className="text-[6px] sm:text-[9px] text-slate-500 font-mono leading-none">{v.rom}</span>
+                                                </div>
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {CONSONANTS.map((c) => (
+                                        <tr key={c.char} style={{ height: 'calc(100% / 15)' }} className="hover:bg-slate-50 transition-colors">
+                                            <th className="border-r border-b border-slate-200 bg-slate-50 align-middle px-0 overflow-hidden">
+                                                <div className="flex flex-row items-baseline justify-center gap-0.5 sm:gap-1 whitespace-nowrap">
+                                                    <span className="text-[11px] sm:text-xl font-bold text-blue-600 hangul-font leading-none">{c.char}</span>
+                                                    <span className="text-[6px] sm:text-[9px] text-slate-500 font-mono leading-none">{c.rom}</span>
+                                                </div>
+                                            </th>
+                                            
+                                            {VOWELS.map((v) => {
+                                                const syllable = getSyllable(c.index, v.index);
+                                                const isSelected = activeSyllable?.text === syllable;
+                                                
+                                                return (
+                                                    <td key={syllable} className="border-b border-r last:border-r-0 border-slate-100 p-0 align-middle h-full relative">
+                                                        <button 
+                                                            onClick={() => speak(syllable, c.char, v.char)}
+                                                            className={`w-full h-full flex flex-col items-center justify-center transition-all duration-100
+                                                                ${isSelected 
+                                                                    ? 'bg-blue-600 text-white shadow-md transform scale-110 z-10 rounded-sm font-extrabold' 
+                                                                    : 'bg-transparent text-slate-800 hover:bg-blue-100 font-bold'
+                                                                }
+                                                            `}
+                                                        >
+                                                            <span className="text-[15px] sm:text-xl hangul-font leading-none">{syllable}</span>
+                                                        </button>
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <footer className="flex-none mt-1 mb-0 text-center text-slate-400 text-[9px] sm:text-[10px]">
+                        <p>Uses built-in Web Speech API. Chrome recommended.</p>
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
